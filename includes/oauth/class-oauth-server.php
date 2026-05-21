@@ -511,7 +511,10 @@ class WPAIC_OAuth_Server {
 
 	public function www_authenticate_header(): string {
 		$metadata_url = home_url( self::WELL_KNOWN_PR_PATH );
-		return sprintf( 'Bearer realm="MCP", resource_metadata="%s"', $metadata_url );
+		// Match the MCP authorization spec example exactly. Some MCP clients
+		// have strict parsers that ignore the header if extra auth-params
+		// (e.g. realm=) precede resource_metadata.
+		return sprintf( 'Bearer resource_metadata="%s"', $metadata_url );
 	}
 
 	/* ===================================================================

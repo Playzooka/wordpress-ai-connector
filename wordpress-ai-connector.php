@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       WordPress AI Connector
  * Description:       Exposes this WordPress site as an MCP server so AI clients (Claude, ChatGPT) can manage content via a remote connector.
- * Version:           0.2.3
+ * Version:           0.2.4
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Fausto Fonseca
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAIC_VERSION', '0.2.3' );
+define( 'WPAIC_VERSION', '0.2.4' );
 define( 'WPAIC_PLUGIN_FILE', __FILE__ );
 define( 'WPAIC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAIC_REST_NAMESPACE', 'wp-ai-connector/v1' );
@@ -111,5 +111,10 @@ add_filter( 'rest_pre_dispatch', static function ( $result, $server, $request ) 
 	header( 'Access-Control-Allow-Headers: Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version' );
 	header( 'Access-Control-Expose-Headers: WWW-Authenticate, Mcp-Session-Id' );
 	header( 'Access-Control-Max-Age: 3600' );
+	// Defeat upstream caching layers (LiteSpeed/CDNs) caching auth challenges
+	// and per-token responses. These endpoints must never be cached.
+	header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
+	header( 'Pragma: no-cache' );
+	header( 'X-LiteSpeed-Cache-Control: no-cache' );
 	return $result;
 }, 10, 3 );

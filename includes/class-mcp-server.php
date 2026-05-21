@@ -81,6 +81,11 @@ class WPAIC_MCP_Server {
 			$header .= ', error="' . $error . '"';
 		}
 		header( 'WWW-Authenticate: ' . $header );
+		// Auth challenges must never be cached. Belt-and-suspenders for hosts
+		// (Hostinger/LiteSpeed) that otherwise apply public cache directives.
+		header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
+		header( 'Pragma: no-cache' );
+		header( 'X-LiteSpeed-Cache-Control: no-cache' );
 	}
 
 	public function handle_request( WP_REST_Request $request ) {
