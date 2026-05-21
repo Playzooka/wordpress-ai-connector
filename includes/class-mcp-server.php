@@ -93,32 +93,22 @@ class WPAIC_MCP_Server {
 			);
 		}
 
-		// JSON-RPC strict parsers (Claude included) reject responses whose id
-		// doesn't match the request's id. Echo the incoming id when parseable;
-		// fall back to null only if the body wasn't valid JSON.
-		$request_id = null;
-		$body       = json_decode( (string) $request->get_body(), true );
-		if ( is_array( $body ) && array_key_exists( 'id', $body ) ) {
-			$request_id = $body['id'];
-		}
-
 		$this->send_www_authenticate( $oauth_error );
 		status_header( 401 );
 		header( 'Content-Type: application/json; charset=utf-8' );
 		header( 'MCP-Protocol-Version: ' . WPAIC_MCP_PROTOCOL_VERSION );
 
-		$resource_metadata = home_url( WPAIC_OAuth_Server::WELL_KNOWN_PR_PATH );
+		// Match the minimal shape known-working MCP servers (BeaHere) use:
+		// id always null on auth errors, generic server error code -32000,
+		// short message, and no data field — the OAuth discovery hint lives
+		// in the WWW-Authenticate header, not the body. Extra data fields
+		// appear to break strict client parsers (Claude pre-flight).
 		echo wp_json_encode( array(
 			'jsonrpc' => '2.0',
-			'id'      => $request_id,
+			'id'      => null,
 			'error'   => array(
-				'code'    => -32001,
-				'message' => $message,
-				'data'    => array(
-					'status'            => 401,
-					'oauth_error'       => $oauth_error,
-					'resource_metadata' => $resource_metadata,
-				),
+				'code'    => -32000,
+				'message' => 'Invalid or missing access token',
 			),
 		) );
 		exit;
