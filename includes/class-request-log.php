@@ -18,11 +18,11 @@ class WPAIC_Request_Log {
 			return;
 		}
 		add_action( 'parse_request', array( $this, 'maybe_log_root' ), 1 );
-		// rest_pre_dispatch fires before permission_callback and route callback,
-		// so we catch even requests that short-circuit with exit() (the 401 path
-		// emits its body manually and exits, which means rest_post_dispatch
-		// would never fire and the request would be invisible to the log).
+		// pre_dispatch captures every request (incl. paths that exit before
+		// dispatch completes). post_dispatch backfills the status on entries
+		// that returned normally.
 		add_filter( 'rest_pre_dispatch', array( $this, 'log_rest_pre' ), 1, 3 );
+		add_filter( 'rest_post_dispatch', array( $this, 'log_rest_post' ), 1, 3 );
 	}
 
 	public function maybe_log_root(): void {
@@ -48,6 +48,43 @@ class WPAIC_Request_Log {
 			null,
 			(string) $request->get_body()
 		);
+		return $result;
+	}
+
+	/**
+	 * After-dispatch hook: backfill the status on the most recent pre-dispatch
+	 * entry for this request. Skipped if log_manual already set the status
+	 * (e.g. the 401 exit path that doesn't reach this filter anyway).
+	 *
+	 * @param mixed $result
+	 * @return mixed
+	 */
+	public function log_rest_post( $result, $server, $request ) {
+		$route = (string) $request->get_route();
+		if ( 0 !== strpos( $route, '/' . WPAIC_REST_NAMESPACE ) ) {
+			return $result;
+		}
+		$status = null;
+		if ( $result instanceof WP_REST_Response ) {
+			$status = $result->get_status();
+		} elseif ( is_wp_error( $result ) ) {
+			$status = (int) ( $result->get_error_data()['status'] ?? 500 );
+		}
+		if ( null === $status ) {
+			return $result;
+		}
+
+		$log = $this->all();
+		if ( empty( $log ) ) {
+			return $result;
+		}
+		$last_key = array_key_last( $log );
+		$last     = $log[ $last_key ];
+		$same_time = ( ( $last['time'] ?? 0 ) >= ( time() - 2 ) );
+		if ( $same_time && null === ( $last['status'] ?? null ) ) {
+			$log[ $last_key ]['status'] = $status;
+			update_option( self::OPTION, $log, false );
+		}
 		return $result;
 	}
 

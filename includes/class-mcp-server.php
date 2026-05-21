@@ -190,13 +190,16 @@ class WPAIC_MCP_Server {
 
 		$response = $this->dispatch( $body, $request );
 
-		// MCP Streamable HTTP: when initialize succeeds, issue an Mcp-Session-Id
-		// the client can include on subsequent requests. We're stateless so the
-		// session ID isn't enforced server-side, but its presence is what some
-		// clients look for to confirm the server speaks MCP.
-		$session_id = null;
+		// Session-ID handling. On initialize success, issue a new ID. On any
+		// other request, echo back whatever ID the client sent (we're stateless,
+		// we trust the client's). Strict MCP clients won't accept a response
+		// without the same session ID they sent.
+		$client_session = (string) ( $_SERVER['HTTP_MCP_SESSION_ID'] ?? '' );
+		$session_id     = null;
 		if ( is_array( $body ) && ( $body['method'] ?? '' ) === 'initialize' && null !== $response ) {
 			$session_id = wp_generate_uuid4();
+		} elseif ( '' !== $client_session ) {
+			$session_id = $client_session;
 		}
 
 		if ( null === $response ) {
