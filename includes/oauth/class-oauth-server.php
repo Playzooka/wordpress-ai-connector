@@ -75,9 +75,14 @@ class WPAIC_OAuth_Server {
 			'registration_endpoint'                 => $this->endpoint_url( 'register' ),
 			'revocation_endpoint'                   => $this->endpoint_url( 'revoke' ),
 			'response_types_supported'              => array( 'code' ),
+			'response_modes_supported'              => array( 'query' ),
 			'grant_types_supported'                 => array( 'authorization_code', 'refresh_token' ),
 			'code_challenge_methods_supported'      => array( 'S256' ),
-			'token_endpoint_auth_methods_supported' => array( 'client_secret_basic', 'client_secret_post', 'none' ),
+			// Advertise public-client only (PKCE-based). Including
+			// client_secret_basic/post causes some clients (Claude) to assume
+			// the server expects a confidential client and bail when DCR
+			// returns no secret.
+			'token_endpoint_auth_methods_supported' => array( 'none' ),
 			'scopes_supported'                      => array( self::SCOPE ),
 			'service_documentation'                 => 'https://github.com/Playzooka/wordpress-ai-connector',
 		);
@@ -511,10 +516,11 @@ class WPAIC_OAuth_Server {
 
 	public function www_authenticate_header(): string {
 		$metadata_url = home_url( self::WELL_KNOWN_PR_PATH );
-		// Match the MCP authorization spec example. resource_metadata is the
-		// key for discovery (RFC 9728). scope is informational and helps
-		// strict parsers categorise the challenge.
-		return sprintf( 'Bearer scope="%s", resource_metadata="%s"', self::SCOPE, $metadata_url );
+		// Minimal form, matching known-working MCP servers exactly. No realm,
+		// no scope, no error param — extra auth-params can trip strict parsers
+		// (Claude.ai's pre-flight rejects challenges that don't fit the
+		// `Bearer resource_metadata="..."` pattern verbatim).
+		return sprintf( 'Bearer resource_metadata="%s"', $metadata_url );
 	}
 
 	/* ===================================================================

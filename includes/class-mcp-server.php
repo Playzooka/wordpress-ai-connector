@@ -43,19 +43,15 @@ class WPAIC_MCP_Server {
 	}
 
 	/**
-	 * Methods that don't require authentication. Protocol negotiation,
-	 * keepalive, and listing (tool/resource/prompt definitions are not
-	 * sensitive — they're public schemas). Auth kicks in on tools/call.
+	 * Methods that don't require authentication.
+	 *
+	 * Empty intentionally: every JSON-RPC method (including initialize) must
+	 * 401 when the bearer is missing — that's the response that triggers
+	 * Claude/ChatGPT's OAuth discovery flow. Letting initialize through
+	 * unauthenticated tells the client "no auth here" and it never starts
+	 * the OAuth handshake.
 	 */
-	private const UNAUTHENTICATED_METHODS = array(
-		'initialize',
-		'notifications/initialized',
-		'initialized',
-		'ping',
-		'tools/list',
-		'resources/list',
-		'prompts/list',
-	);
+	private const UNAUTHENTICATED_METHODS = array();
 
 	private function require_auth( WP_REST_Request $request, string $method ): void {
 		if ( in_array( $method, self::UNAUTHENTICATED_METHODS, true ) ) {
