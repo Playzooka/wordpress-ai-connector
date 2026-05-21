@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       WordPress AI Connector
  * Description:       Exposes this WordPress site as an MCP server so AI clients (Claude, ChatGPT) can manage content via a remote connector.
- * Version:           0.1.0
+ * Version:           0.1.1
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Fausto Fonseca
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAIC_VERSION', '0.1.0' );
+define( 'WPAIC_VERSION', '0.1.1' );
 define( 'WPAIC_PLUGIN_FILE', __FILE__ );
 define( 'WPAIC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAIC_REST_NAMESPACE', 'wp-ai-connector/v1' );
@@ -23,6 +23,7 @@ define( 'WPAIC_MCP_PROTOCOL_VERSION', '2025-06-18' );
 
 require_once WPAIC_PLUGIN_DIR . 'includes/class-mcp-tool-registry.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/class-mcp-server.php';
+require_once WPAIC_PLUGIN_DIR . 'includes/class-admin.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-posts-tool.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-pages-tool.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-media-tool.php';
@@ -39,12 +40,26 @@ $wpaic_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpd
 $wpaic_update_checker->setBranch( 'main' );
 $wpaic_update_checker->getVcsApi()->enableReleaseAssets();
 
-add_action( 'rest_api_init', static function () {
-	$registry = new WPAIC_Tool_Registry();
-	( new WPAIC_Posts_Tool() )->register( $registry );
-	( new WPAIC_Pages_Tool() )->register( $registry );
-	( new WPAIC_Media_Tool() )->register( $registry );
-	( new WPAIC_Site_Tool() )->register( $registry );
+/**
+ * Build and return the shared tool registry. Lazy + memoized so both the
+ * REST handler and the admin page see the same set of tools.
+ */
+function wpaic_registry(): WPAIC_Tool_Registry {
+	static $registry = null;
+	if ( null === $registry ) {
+		$registry = new WPAIC_Tool_Registry();
+		( new WPAIC_Posts_Tool() )->register( $registry );
+		( new WPAIC_Pages_Tool() )->register( $registry );
+		( new WPAIC_Media_Tool() )->register( $registry );
+		( new WPAIC_Site_Tool() )->register( $registry );
+	}
+	return $registry;
+}
 
-	( new WPAIC_MCP_Server( $registry ) )->register_routes();
+add_action( 'rest_api_init', static function () {
+	( new WPAIC_MCP_Server( wpaic_registry() ) )->register_routes();
 } );
+
+if ( is_admin() ) {
+	( new WPAIC_Admin( wpaic_registry() ) )->register();
+}
