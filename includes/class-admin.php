@@ -112,6 +112,92 @@ class WPAIC_Admin {
 				?>
 			</p>
 
+			<?php
+			$clients      = $this->oauth_store->get_clients();
+			$fresh_secret = get_transient( 'wpaic_last_client_secret' );
+			if ( $fresh_secret ) {
+				delete_transient( 'wpaic_last_client_secret' );
+			}
+			?>
+			<h2><?php esc_html_e( 'Pre-registered OAuth clients (advanced)', 'wp-ai-connector' ); ?></h2>
+			<p class="description">
+				<?php esc_html_e( 'For clients that don\'t auto-register via DCR (notably Claude when "start_error" appears, or ChatGPT). Create a client here, then paste the Client ID / Secret into the AI client\'s Advanced OAuth settings.', 'wp-ai-connector' ); ?>
+			</p>
+
+			<?php if ( $fresh_secret && ! empty( $fresh_secret['client_secret'] ) ) : ?>
+				<div class="notice notice-warning inline" style="padding:12px;border-left-width:4px">
+					<p><strong><?php esc_html_e( 'Copy these credentials now — the Client Secret will not be shown again.', 'wp-ai-connector' ); ?></strong></p>
+					<table class="form-table" style="margin-top:8px">
+						<tr>
+							<th style="width:160px"><?php esc_html_e( 'Client ID', 'wp-ai-connector' ); ?></th>
+							<td><code style="user-select:all"><?php echo esc_html( $fresh_secret['client_id'] ); ?></code></td>
+						</tr>
+						<tr>
+							<th><?php esc_html_e( 'Client Secret', 'wp-ai-connector' ); ?></th>
+							<td><code style="user-select:all;word-break:break-all"><?php echo esc_html( $fresh_secret['client_secret'] ); ?></code></td>
+						</tr>
+					</table>
+				</div>
+			<?php endif; ?>
+
+			<form method="post" style="background:#f6f7f7;padding:16px;border-radius:6px;max-width:720px">
+				<input type="hidden" name="wpaic_action" value="register_client" />
+				<?php wp_nonce_field( 'wpaic_register_client' ); ?>
+				<table class="form-table">
+					<tr>
+						<th style="width:160px"><label for="wpaic-client-name"><?php esc_html_e( 'Client name', 'wp-ai-connector' ); ?></label></th>
+						<td><input type="text" id="wpaic-client-name" name="client_name" class="regular-text" placeholder="claude-manual" required /></td>
+					</tr>
+					<tr>
+						<th><label for="wpaic-client-redirects"><?php esc_html_e( 'Redirect URIs', 'wp-ai-connector' ); ?></label></th>
+						<td>
+							<textarea id="wpaic-client-redirects" name="redirect_uris" class="large-text code" rows="3" placeholder="https://claude.ai/api/mcp/auth_callback"></textarea>
+							<p class="description">
+								<?php esc_html_e( 'One per line. Common values:', 'wp-ai-connector' ); ?><br />
+								<code>https://claude.ai/api/mcp/auth_callback</code><br />
+								<code>https://chatgpt.com/connector_platform_oauth_redirect</code><br />
+								<code>http://localhost:6274/oauth/callback/debug</code> (<?php esc_html_e( 'MCP Inspector', 'wp-ai-connector' ); ?>)
+							</p>
+						</td>
+					</tr>
+				</table>
+				<p><button type="submit" class="button button-primary"><?php esc_html_e( 'Create client', 'wp-ai-connector' ); ?></button></p>
+			</form>
+
+			<?php if ( ! empty( $clients ) ) : ?>
+				<table class="widefat striped" style="margin-top:16px">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'Client', 'wp-ai-connector' ); ?></th>
+							<th><?php esc_html_e( 'Client ID', 'wp-ai-connector' ); ?></th>
+							<th><?php esc_html_e( 'Redirect URIs', 'wp-ai-connector' ); ?></th>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody>
+					<?php foreach ( $clients as $c ) : ?>
+						<tr>
+							<td><?php echo esc_html( $c['client_name'] ?? '' ); ?></td>
+							<td><code style="user-select:all"><?php echo esc_html( $c['client_id'] ); ?></code></td>
+							<td style="font-size:11px">
+								<?php foreach ( (array) ( $c['redirect_uris'] ?? array() ) as $uri ) : ?>
+									<div><code><?php echo esc_html( $uri ); ?></code></div>
+								<?php endforeach; ?>
+							</td>
+							<td>
+								<form method="post" style="margin:0" onsubmit="return confirm('<?php echo esc_js( __( 'Delete this client? All tokens issued to it will be revoked.', 'wp-ai-connector' ) ); ?>')">
+									<input type="hidden" name="wpaic_action" value="delete_client" />
+									<input type="hidden" name="client_id" value="<?php echo esc_attr( $c['client_id'] ); ?>" />
+									<?php wp_nonce_field( 'wpaic_delete_client_' . $c['client_id'] ); ?>
+									<button type="submit" class="button button-link-delete"><?php esc_html_e( 'Delete', 'wp-ai-connector' ); ?></button>
+								</form>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
+
 			<h2><?php esc_html_e( 'Connected apps', 'wp-ai-connector' ); ?></h2>
 			<?php if ( empty( $authorizations ) ) : ?>
 				<p class="description"><?php esc_html_e( 'No apps are connected yet. Add this site as an MCP connector in Claude or ChatGPT to authorize one.', 'wp-ai-connector' ); ?></p>
@@ -325,6 +411,41 @@ class WPAIC_Admin {
 				),
 				$count
 			);
+		}
+
+		if ( 'register_client' === $action ) {
+			check_admin_referer( 'wpaic_register_client' );
+			$name         = sanitize_text_field( wp_unslash( $_POST['client_name'] ?? 'Manual client' ) );
+			$redirect_raw = (string) wp_unslash( $_POST['redirect_uris'] ?? '' );
+			$redirects    = array_values( array_filter( array_map( 'trim', preg_split( '/\s+/', $redirect_raw ) ?: array() ) ) );
+			if ( empty( $redirects ) ) {
+				return __( 'At least one redirect URI is required.', 'wp-ai-connector' );
+			}
+			try {
+				$client = $this->oauth_store->create_client( array(
+					'client_name'                => $name,
+					'redirect_uris'              => $redirects,
+					'token_endpoint_auth_method' => 'client_secret_basic',
+					'grant_types'                => array( 'authorization_code', 'refresh_token' ),
+					'response_types'             => array( 'code' ),
+				) );
+			} catch ( Throwable $e ) {
+				return __( 'Failed to create client: ', 'wp-ai-connector' ) . $e->getMessage();
+			}
+			// Stash the credentials in a one-shot transient so we can show
+			// the secret on the next page load. After that the secret is gone.
+			set_transient( 'wpaic_last_client_secret', array(
+				'client_id'     => $client['client_id'],
+				'client_secret' => $client['client_secret'] ?? '',
+			), 5 * MINUTE_IN_SECONDS );
+			return __( 'Client created. The Client Secret is shown once below — copy it now.', 'wp-ai-connector' );
+		}
+
+		if ( 'delete_client' === $action ) {
+			$client_id = sanitize_text_field( wp_unslash( $_POST['client_id'] ?? '' ) );
+			check_admin_referer( 'wpaic_delete_client_' . $client_id );
+			$this->oauth_store->delete_client( $client_id );
+			return __( 'Client deleted. All tokens issued to it have been revoked.', 'wp-ai-connector' );
 		}
 
 		return '';
