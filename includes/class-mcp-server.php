@@ -31,13 +31,13 @@ class WPAIC_MCP_Server {
 		if ( '' !== $bearer ) {
 			$user_id = $this->oauth->resolve_bearer_token( $bearer );
 			if ( ! $user_id ) {
-				$this->emit_unauthorized( 'invalid_token', 'Bearer token is invalid, expired, or bound to a different resource.' );
+				$this->emit_unauthorized( $request, 'invalid_token', 'Bearer token is invalid, expired, or bound to a different resource.' );
 			}
 			wp_set_current_user( $user_id );
 		}
 
 		if ( ! is_user_logged_in() ) {
-			$this->emit_unauthorized( '', 'Authentication required. Use an OAuth Bearer token or a WordPress Application Password.' );
+			$this->emit_unauthorized( $request, '', 'Authentication required. Use an OAuth Bearer token or a WordPress Application Password.' );
 		}
 		if ( ! current_user_can( 'edit_posts' ) ) {
 			return new WP_Error(
@@ -56,7 +56,17 @@ class WPAIC_MCP_Server {
 	 * WordPress's default WP_Error JSON shape confuses some of them and they
 	 * abort discovery instead of following WWW-Authenticate.
 	 */
-	private function emit_unauthorized( string $oauth_error, string $message ): void {
+	private function emit_unauthorized( WP_REST_Request $request, string $oauth_error, string $message ): void {
+		// rest_pre_dispatch already logged this request, but log_manual ensures
+		// the entry has the correct status (401). Belt-and-suspenders.
+		if ( function_exists( 'wpaic_request_log' ) ) {
+			wpaic_request_log()->log_manual(
+				(string) ( $_SERVER['REQUEST_URI'] ?? $request->get_route() ),
+				401,
+				(string) $request->get_body()
+			);
+		}
+
 		$this->send_www_authenticate( $oauth_error );
 		status_header( 401 );
 		header( 'Content-Type: application/json; charset=utf-8' );

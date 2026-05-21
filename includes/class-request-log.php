@@ -18,7 +18,11 @@ class WPAIC_Request_Log {
 			return;
 		}
 		add_action( 'parse_request', array( $this, 'maybe_log_root' ), 1 );
-		add_filter( 'rest_post_dispatch', array( $this, 'log_rest' ), 1, 3 );
+		// rest_pre_dispatch fires before permission_callback and route callback,
+		// so we catch even requests that short-circuit with exit() (the 401 path
+		// emits its body manually and exits, which means rest_post_dispatch
+		// would never fire and the request would be invisible to the log).
+		add_filter( 'rest_pre_dispatch', array( $this, 'log_rest_pre' ), 1, 3 );
 	}
 
 	public function maybe_log_root(): void {
@@ -32,22 +36,30 @@ class WPAIC_Request_Log {
 	 * @param mixed $result
 	 * @return mixed
 	 */
-	public function log_rest( $result, $server, $request ) {
+	public function log_rest_pre( $result, $server, $request ) {
 		$route = (string) $request->get_route();
 		if ( 0 !== strpos( $route, '/' . WPAIC_REST_NAMESPACE ) ) {
 			return $result;
 		}
-		$status = null;
-		if ( $result instanceof WP_REST_Response ) {
-			$status = $result->get_status();
-		} elseif ( is_wp_error( $result ) ) {
-			$status = (int) ( $result->get_error_data()['status'] ?? 500 );
-		}
-		$this->record( $_SERVER['REQUEST_URI'] ?? $route, $status );
+		// Status isn't known yet at pre-dispatch. The body comes from the
+		// WP_REST_Request directly (php://input is already consumed by now).
+		$this->record(
+			$_SERVER['REQUEST_URI'] ?? $route,
+			null,
+			(string) $request->get_body()
+		);
 		return $result;
 	}
 
-	private function record( string $path, ?int $status ): void {
+	/**
+	 * Allow code paths that exit() before the REST dispatch cycle finishes
+	 * (notably the 401 emitter in WPAIC_MCP_Server) to record themselves.
+	 */
+	public function log_manual( string $path, ?int $status, string $body = '' ): void {
+		$this->record( $path, $status, $body );
+	}
+
+	private function record( string $path, ?int $status, ?string $body = null ): void {
 		$entry = array(
 			'time'    => time(),
 			'method'  => substr( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ), 0, 10 ),
@@ -56,7 +68,7 @@ class WPAIC_Request_Log {
 			'origin'  => substr( (string) ( $_SERVER['HTTP_ORIGIN'] ?? '' ), 0, 200 ),
 			'ua'      => substr( (string) ( $_SERVER['HTTP_USER_AGENT'] ?? '' ), 0, 200 ),
 			'headers' => $this->collect_headers(),
-			'body'    => $this->collect_body(),
+			'body'    => substr( $body ?? $this->collect_body(), 0, 500 ),
 		);
 		$log = $this->all();
 		$log[] = $entry;
