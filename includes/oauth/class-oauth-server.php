@@ -122,6 +122,35 @@ class WPAIC_OAuth_Server {
 			'callback'            => array( $this, 'handle_revoke' ),
 			'permission_callback' => '__return_true',
 		) );
+
+		// Well-known discovery available under the REST namespace too. Some MCP
+		// clients append .well-known/* to the resource URL base instead of using
+		// the origin-level path. Same metadata, multiple paths.
+		$wk = array(
+			'/.well-known/oauth-authorization-server'     => 'rest_authorization_server_metadata',
+			'/.well-known/oauth-protected-resource'       => 'rest_protected_resource_metadata',
+			'/mcp/.well-known/oauth-authorization-server' => 'rest_authorization_server_metadata',
+			'/mcp/.well-known/oauth-protected-resource'   => 'rest_protected_resource_metadata',
+		);
+		foreach ( $wk as $path => $method ) {
+			register_rest_route( $ns, $path, array(
+				'methods'             => 'GET',
+				'callback'            => array( $this, $method ),
+				'permission_callback' => '__return_true',
+			) );
+		}
+	}
+
+	public function rest_authorization_server_metadata(): WP_REST_Response {
+		$response = new WP_REST_Response( $this->authorization_server_metadata() );
+		$response->header( 'Access-Control-Allow-Origin', '*' );
+		return $response;
+	}
+
+	public function rest_protected_resource_metadata(): WP_REST_Response {
+		$response = new WP_REST_Response( $this->protected_resource_metadata() );
+		$response->header( 'Access-Control-Allow-Origin', '*' );
+		return $response;
 	}
 
 	/* ===================================================================

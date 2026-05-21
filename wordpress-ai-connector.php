@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       WordPress AI Connector
  * Description:       Exposes this WordPress site as an MCP server so AI clients (Claude, ChatGPT) can manage content via a remote connector.
- * Version:           0.2.1
+ * Version:           0.2.2
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Fausto Fonseca
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAIC_VERSION', '0.2.1' );
+define( 'WPAIC_VERSION', '0.2.2' );
 define( 'WPAIC_PLUGIN_FILE', __FILE__ );
 define( 'WPAIC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAIC_REST_NAMESPACE', 'wp-ai-connector/v1' );
@@ -84,3 +84,22 @@ add_action( 'rest_api_init', static function () {
 if ( is_admin() ) {
 	( new WPAIC_Admin( wpaic_registry(), wpaic_oauth_store() ) )->register();
 }
+
+/**
+ * Send permissive CORS headers for all routes in this plugin's namespace and
+ * expose WWW-Authenticate so MCP clients running in a browser can read the
+ * discovery hint on the 401 response from /mcp. The well-known root paths
+ * already set their own CORS headers (see WPAIC_OAuth_Server::emit_cors_headers()).
+ */
+add_filter( 'rest_pre_dispatch', static function ( $result, $server, $request ) {
+	$route = (string) $request->get_route();
+	if ( 0 !== strpos( $route, '/' . WPAIC_REST_NAMESPACE ) ) {
+		return $result;
+	}
+	header( 'Access-Control-Allow-Origin: *' );
+	header( 'Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE' );
+	header( 'Access-Control-Allow-Headers: Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version' );
+	header( 'Access-Control-Expose-Headers: WWW-Authenticate, Mcp-Session-Id' );
+	header( 'Access-Control-Max-Age: 3600' );
+	return $result;
+}, 10, 3 );
