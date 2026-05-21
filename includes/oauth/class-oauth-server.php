@@ -39,10 +39,30 @@ class WPAIC_OAuth_Server {
 
 	public function maybe_handle_well_known(): void {
 		$path = (string) parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH );
-		if ( self::WELL_KNOWN_AS_PATH === $path ) {
+
+		// Match the well-known path with or without a trailing path component.
+		// RFC 9728 / RFC 8414 allow path-aware metadata locations like
+		// /.well-known/oauth-protected-resource/wp-json/wp-ai-connector/v1/mcp,
+		// and some MCP clients (notably ChatGPT) use that form.
+		$is_as = ( self::WELL_KNOWN_AS_PATH === $path ) || 0 === strpos( $path, self::WELL_KNOWN_AS_PATH . '/' );
+		$is_pr = ( self::WELL_KNOWN_PR_PATH === $path ) || 0 === strpos( $path, self::WELL_KNOWN_PR_PATH . '/' );
+
+		if ( ! $is_as && ! $is_pr ) {
+			return;
+		}
+
+		// CORS preflight — public metadata; safe to allow anywhere.
+		if ( 'OPTIONS' === ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) {
+			nocache_headers();
+			status_header( 204 );
+			$this->emit_cors_headers();
+			exit;
+		}
+
+		if ( $is_as ) {
 			$this->emit_json( $this->authorization_server_metadata() );
 		}
-		if ( self::WELL_KNOWN_PR_PATH === $path ) {
+		if ( $is_pr ) {
 			$this->emit_json( $this->protected_resource_metadata() );
 		}
 	}
@@ -552,8 +572,16 @@ class WPAIC_OAuth_Server {
 		nocache_headers();
 		status_header( 200 );
 		header( 'Content-Type: application/json; charset=utf-8' );
+		$this->emit_cors_headers();
 		echo wp_json_encode( $data );
 		exit;
+	}
+
+	private function emit_cors_headers(): void {
+		header( 'Access-Control-Allow-Origin: *' );
+		header( 'Access-Control-Allow-Methods: GET, OPTIONS' );
+		header( 'Access-Control-Allow-Headers: Authorization, Content-Type' );
+		header( 'Access-Control-Max-Age: 3600' );
 	}
 
 	private function emit_html_error( string $code, string $message ): void {
