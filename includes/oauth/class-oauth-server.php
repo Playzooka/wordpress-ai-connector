@@ -511,10 +511,10 @@ class WPAIC_OAuth_Server {
 
 	public function www_authenticate_header(): string {
 		$metadata_url = home_url( self::WELL_KNOWN_PR_PATH );
-		// Match the MCP authorization spec example exactly. Some MCP clients
-		// have strict parsers that ignore the header if extra auth-params
-		// (e.g. realm=) precede resource_metadata.
-		return sprintf( 'Bearer resource_metadata="%s"', $metadata_url );
+		// Match the MCP authorization spec example. resource_metadata is the
+		// key for discovery (RFC 9728). scope is informational and helps
+		// strict parsers categorise the challenge.
+		return sprintf( 'Bearer scope="%s", resource_metadata="%s"', self::SCOPE, $metadata_url );
 	}
 
 	/* ===================================================================

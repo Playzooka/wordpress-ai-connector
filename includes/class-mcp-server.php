@@ -185,11 +185,27 @@ class WPAIC_MCP_Server {
 		}
 
 		$response = $this->dispatch( $body, $request );
+
+		// MCP Streamable HTTP: when initialize succeeds, issue an Mcp-Session-Id
+		// the client can include on subsequent requests. We're stateless so the
+		// session ID isn't enforced server-side, but its presence is what some
+		// clients look for to confirm the server speaks MCP.
+		$session_id = null;
+		if ( is_array( $body ) && ( $body['method'] ?? '' ) === 'initialize' && null !== $response ) {
+			$session_id = wp_generate_uuid4();
+		}
+
 		if ( null === $response ) {
 			// Notification — no body.
-			return new WP_REST_Response( null, 204 );
+			$rest_response = new WP_REST_Response( null, 204 );
+		} else {
+			$rest_response = new WP_REST_Response( $response, 200 );
 		}
-		return new WP_REST_Response( $response, 200 );
+		$rest_response->header( 'MCP-Protocol-Version', WPAIC_MCP_PROTOCOL_VERSION );
+		if ( $session_id ) {
+			$rest_response->header( 'Mcp-Session-Id', $session_id );
+		}
+		return $rest_response;
 	}
 
 	private function is_batch( $body ): bool {
