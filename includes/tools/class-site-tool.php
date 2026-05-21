@@ -9,7 +9,10 @@ class WPAIC_Site_Tool {
 			'wp_get_site_info',
 			array(
 				'description' => 'Read-only information about this WordPress site (name, URL, version, active theme, active plugins).',
-				'inputSchema' => array( 'type' => 'object', 'properties' => array() ),
+				// properties MUST be a JSON object; an empty PHP array would
+				// encode to [] which is invalid JSON Schema and causes strict
+				// tool-list validators (Claude) to reject the whole tool list.
+				'inputSchema' => array( 'type' => 'object', 'properties' => (object) array() ),
 			),
 			array( $this, 'get_site_info' ),
 			'edit_posts'

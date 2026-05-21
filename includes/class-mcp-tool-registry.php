@@ -18,7 +18,14 @@ class WPAIC_Tool_Registry {
 	public function list_tools(): array {
 		$list = array();
 		foreach ( $this->tools as $name => $tool ) {
-			$list[] = array_merge( array( 'name' => $name ), $tool['schema'] );
+			$entry = array_merge( array( 'name' => $name ), $tool['schema'] );
+			// Force inputSchema.properties to encode as a JSON object even
+			// when empty. PHP would otherwise serialise an empty array as []
+			// which is invalid JSON Schema and breaks strict client parsers.
+			if ( isset( $entry['inputSchema']['properties'] ) && is_array( $entry['inputSchema']['properties'] ) && empty( $entry['inputSchema']['properties'] ) ) {
+				$entry['inputSchema']['properties'] = (object) array();
+			}
+			$list[] = $entry;
 		}
 		return $list;
 	}
