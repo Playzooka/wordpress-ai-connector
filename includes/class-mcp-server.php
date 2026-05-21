@@ -25,28 +25,54 @@ class WPAIC_MCP_Server {
 	}
 
 	public function check_permission( WP_REST_Request $request ) {
-		// Prefer Bearer (OAuth). If absent, fall through to whatever WordPress
-		// resolved (Application Passwords populate the current user already).
+		// Auth is enforced per-method in dispatch() so that unauthenticated
+		// MCP clients can complete protocol negotiation (initialize, ping,
+		// notifications/initialized) before being challenged. The challenge
+		// itself comes from tools/list, tools/call, etc. — that's when the
+		// client sees our 401 + WWW-Authenticate and starts OAuth discovery.
+		// Resolve a Bearer token here so wp_set_current_user runs in time
+		// for the route handler.
+		$bearer = $this->extract_bearer_token();
+		if ( '' !== $bearer ) {
+			$user_id = $this->oauth->resolve_bearer_token( $bearer );
+			if ( $user_id ) {
+				wp_set_current_user( $user_id );
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Methods that don't require authentication. Protocol negotiation and
+	 * keepalive only — they expose no data and perform no actions.
+	 */
+	private const UNAUTHENTICATED_METHODS = array(
+		'initialize',
+		'notifications/initialized',
+		'initialized',
+		'ping',
+	);
+
+	private function require_auth( WP_REST_Request $request, string $method ): void {
+		if ( in_array( $method, self::UNAUTHENTICATED_METHODS, true ) ) {
+			return;
+		}
+		// Bearer was already resolved in check_permission. Re-check token
+		// validity here so we can distinguish "no token" from "bad token"
+		// and report invalid_token to the client.
 		$bearer = $this->extract_bearer_token();
 		if ( '' !== $bearer ) {
 			$user_id = $this->oauth->resolve_bearer_token( $bearer );
 			if ( ! $user_id ) {
 				$this->emit_unauthorized( $request, 'invalid_token', 'Bearer token is invalid, expired, or bound to a different resource.' );
 			}
-			wp_set_current_user( $user_id );
 		}
-
 		if ( ! is_user_logged_in() ) {
 			$this->emit_unauthorized( $request, '', 'Authentication required. Use an OAuth Bearer token or a WordPress Application Password.' );
 		}
 		if ( ! current_user_can( 'edit_posts' ) ) {
-			return new WP_Error(
-				'wpaic_forbidden',
-				'User lacks edit_posts capability.',
-				array( 'status' => 403 )
-			);
+			$this->emit_unauthorized( $request, 'insufficient_scope', 'User lacks edit_posts capability.' );
 		}
-		return true;
 	}
 
 	/**
@@ -150,7 +176,7 @@ class WPAIC_MCP_Server {
 		if ( $this->is_batch( $body ) ) {
 			$responses = array();
 			foreach ( $body as $message ) {
-				$response = $this->dispatch( $message );
+				$response = $this->dispatch( $message, $request );
 				if ( null !== $response ) {
 					$responses[] = $response;
 				}
@@ -158,7 +184,7 @@ class WPAIC_MCP_Server {
 			return empty( $responses ) ? new WP_REST_Response( null, 204 ) : new WP_REST_Response( $responses, 200 );
 		}
 
-		$response = $this->dispatch( $body );
+		$response = $this->dispatch( $body, $request );
 		if ( null === $response ) {
 			// Notification — no body.
 			return new WP_REST_Response( null, 204 );
@@ -173,7 +199,7 @@ class WPAIC_MCP_Server {
 	/**
 	 * @return array|null JSON-RPC response, or null for notifications.
 	 */
-	private function dispatch( array $message ): ?array {
+	private function dispatch( array $message, WP_REST_Request $request ): ?array {
 		$id     = $message['id']     ?? null;
 		$method = $message['method'] ?? null;
 		$params = $message['params'] ?? array();
@@ -183,6 +209,11 @@ class WPAIC_MCP_Server {
 		}
 
 		$is_notification = ! array_key_exists( 'id', $message );
+
+		// Gate methods that read or mutate WordPress data. Protocol-negotiation
+		// methods (initialize, ping, notifications/initialized) pass through so
+		// the client can establish a session before being challenged.
+		$this->require_auth( $request, $method );
 
 		try {
 			switch ( $method ) {
