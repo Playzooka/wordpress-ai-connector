@@ -6,10 +6,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 class WPAIC_Admin {
 	private WPAIC_Tool_Registry $registry;
 	private WPAIC_OAuth_Store $oauth_store;
+	private WPAIC_Request_Log $request_log;
 
-	public function __construct( WPAIC_Tool_Registry $registry, WPAIC_OAuth_Store $oauth_store ) {
+	public function __construct( WPAIC_Tool_Registry $registry, WPAIC_OAuth_Store $oauth_store, WPAIC_Request_Log $request_log ) {
 		$this->registry    = $registry;
 		$this->oauth_store = $oauth_store;
+		$this->request_log = $request_log;
 	}
 
 	public function register(): void {
@@ -189,6 +191,57 @@ class WPAIC_Admin {
 				</tbody>
 			</table>
 
+			<?php $entries = array_reverse( $this->request_log->all() ); ?>
+			<h2 style="display:flex;align-items:center;gap:12px">
+				<?php
+				/* translators: %d: number of entries in the request log */
+				printf( esc_html__( 'Request log (%d)', 'wp-ai-connector' ), count( $entries ) );
+				?>
+				<?php if ( ! empty( $entries ) ) : ?>
+					<form method="post" style="margin:0">
+						<input type="hidden" name="wpaic_action" value="clear_log" />
+						<?php wp_nonce_field( 'wpaic_clear_log' ); ?>
+						<button type="submit" class="button button-small"><?php esc_html_e( 'Clear', 'wp-ai-connector' ); ?></button>
+					</form>
+				<?php endif; ?>
+			</h2>
+			<p class="description">
+				<?php esc_html_e( 'Recent requests to the plugin\'s endpoints. Useful for diagnosing MCP client discovery flows. Disable by adding define(\'WPAIC_DEBUG_REQUESTS\', false); to wp-config.php.', 'wp-ai-connector' ); ?>
+			</p>
+			<?php if ( empty( $entries ) ) : ?>
+				<p class="description"><?php esc_html_e( 'No requests recorded yet.', 'wp-ai-connector' ); ?></p>
+			<?php else : ?>
+				<table class="widefat striped">
+					<thead>
+						<tr>
+							<th style="width:130px"><?php esc_html_e( 'Time', 'wp-ai-connector' ); ?></th>
+							<th style="width:60px"><?php esc_html_e( 'Method', 'wp-ai-connector' ); ?></th>
+							<th><?php esc_html_e( 'Path', 'wp-ai-connector' ); ?></th>
+							<th style="width:60px"><?php esc_html_e( 'Status', 'wp-ai-connector' ); ?></th>
+							<th style="width:200px"><?php esc_html_e( 'Origin / User-Agent', 'wp-ai-connector' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+					<?php foreach ( $entries as $entry ) : ?>
+						<tr>
+							<td><?php echo esc_html( wp_date( 'H:i:s', (int) $entry['time'] ) ); ?></td>
+							<td><code><?php echo esc_html( $entry['method'] ); ?></code></td>
+							<td style="word-break:break-all"><code><?php echo esc_html( $entry['path'] ); ?></code></td>
+							<td><?php echo esc_html( null === $entry['status'] ? '—' : (string) $entry['status'] ); ?></td>
+							<td>
+								<?php if ( ! empty( $entry['origin'] ) ) : ?>
+									<div><?php echo esc_html( $entry['origin'] ); ?></div>
+								<?php endif; ?>
+								<?php if ( ! empty( $entry['ua'] ) ) : ?>
+									<div style="color:#646970;font-size:11px;word-break:break-all"><?php echo esc_html( $entry['ua'] ); ?></div>
+								<?php endif; ?>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
+
 			<h2><?php esc_html_e( 'About', 'wp-ai-connector' ); ?></h2>
 			<p>
 				<?php
@@ -229,30 +282,38 @@ class WPAIC_Admin {
 	}
 
 	/**
-	 * Handle revoke POSTs from the Connected apps section. Returns a notice string.
+	 * Handle admin-page POST actions. Returns a notice string for success.
 	 */
 	private function handle_admin_post(): string {
 		if ( ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) !== 'POST' ) {
 			return '';
 		}
 		$action = sanitize_text_field( wp_unslash( $_POST['wpaic_action'] ?? '' ) );
-		if ( 'revoke' !== $action ) {
-			return '';
-		}
-		$client_id = sanitize_text_field( wp_unslash( $_POST['client_id'] ?? '' ) );
-		$user_id   = (int) ( $_POST['user_id'] ?? 0 );
-		check_admin_referer( 'wpaic_revoke_' . $client_id . '_' . $user_id );
 
-		$count = $this->oauth_store->revoke_refresh_tokens_for_user_client( $user_id, $client_id );
-		return sprintf(
-			/* translators: %d: number of revoked authorizations */
-			_n(
-				'Revoked %d authorization. Access tokens already issued will expire within one hour.',
-				'Revoked %d authorizations. Access tokens already issued will expire within one hour.',
-				$count,
-				'wp-ai-connector'
-			),
-			$count
-		);
+		if ( 'clear_log' === $action ) {
+			check_admin_referer( 'wpaic_clear_log' );
+			$this->request_log->clear();
+			return __( 'Request log cleared.', 'wp-ai-connector' );
+		}
+
+		if ( 'revoke' === $action ) {
+			$client_id = sanitize_text_field( wp_unslash( $_POST['client_id'] ?? '' ) );
+			$user_id   = (int) ( $_POST['user_id'] ?? 0 );
+			check_admin_referer( 'wpaic_revoke_' . $client_id . '_' . $user_id );
+
+			$count = $this->oauth_store->revoke_refresh_tokens_for_user_client( $user_id, $client_id );
+			return sprintf(
+				/* translators: %d: number of revoked authorizations */
+				_n(
+					'Revoked %d authorization. Access tokens already issued will expire within one hour.',
+					'Revoked %d authorizations. Access tokens already issued will expire within one hour.',
+					$count,
+					'wp-ai-connector'
+				),
+				$count
+			);
+		}
+
+		return '';
 	}
 }

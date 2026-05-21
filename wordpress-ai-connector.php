@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       WordPress AI Connector
  * Description:       Exposes this WordPress site as an MCP server so AI clients (Claude, ChatGPT) can manage content via a remote connector.
- * Version:           0.2.2
+ * Version:           0.2.3
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Fausto Fonseca
@@ -15,13 +15,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAIC_VERSION', '0.2.2' );
+define( 'WPAIC_VERSION', '0.2.3' );
 define( 'WPAIC_PLUGIN_FILE', __FILE__ );
 define( 'WPAIC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAIC_REST_NAMESPACE', 'wp-ai-connector/v1' );
 define( 'WPAIC_MCP_PROTOCOL_VERSION', '2025-06-18' );
 
 require_once WPAIC_PLUGIN_DIR . 'includes/class-mcp-tool-registry.php';
+require_once WPAIC_PLUGIN_DIR . 'includes/class-request-log.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/oauth/class-oauth-store.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/oauth/class-oauth-server.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/class-mcp-server.php';
@@ -74,15 +75,24 @@ function wpaic_oauth_server(): WPAIC_OAuth_Server {
 	return $server;
 }
 
+function wpaic_request_log(): WPAIC_Request_Log {
+	static $log = null;
+	if ( null === $log ) {
+		$log = new WPAIC_Request_Log();
+	}
+	return $log;
+}
+
 // OAuth wires its own hooks (well-known + REST routes).
 wpaic_oauth_server()->register();
+wpaic_request_log()->register();
 
 add_action( 'rest_api_init', static function () {
 	( new WPAIC_MCP_Server( wpaic_registry(), wpaic_oauth_server() ) )->register_routes();
 } );
 
 if ( is_admin() ) {
-	( new WPAIC_Admin( wpaic_registry(), wpaic_oauth_store() ) )->register();
+	( new WPAIC_Admin( wpaic_registry(), wpaic_oauth_store(), wpaic_request_log() ) )->register();
 }
 
 /**
