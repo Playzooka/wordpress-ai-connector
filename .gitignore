@@ -2,5 +2,4 @@
 .idea/
 .vscode/
 *.log
-vendor/
 node_modules/

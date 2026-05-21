@@ -8,6 +8,7 @@
  * Author:            Fausto Fonseca
  * License:           GPL-2.0-or-later
  * Text Domain:       wp-ai-connector
+ * Update URI:        https://github.com/Playzooka/wordpress-ai-connector
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -26,6 +27,17 @@ require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-posts-tool.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-pages-tool.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-media-tool.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-site-tool.php';
+
+// Self-updating from the GitHub repo via Plugin Update Checker (YahnisElsts).
+require_once WPAIC_PLUGIN_DIR . 'vendor/plugin-update-checker/plugin-update-checker.php';
+
+$wpaic_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+	'https://github.com/Playzooka/wordpress-ai-connector/',
+	__FILE__,
+	'wordpress-ai-connector'
+);
+$wpaic_update_checker->setBranch( 'main' );
+$wpaic_update_checker->getVcsApi()->enableReleaseAssets();
 
 add_action( 'rest_api_init', static function () {
 	$registry = new WPAIC_Tool_Registry();
