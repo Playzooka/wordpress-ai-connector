@@ -43,14 +43,18 @@ class WPAIC_MCP_Server {
 	}
 
 	/**
-	 * Methods that don't require authentication. Protocol negotiation and
-	 * keepalive only — they expose no data and perform no actions.
+	 * Methods that don't require authentication. Protocol negotiation,
+	 * keepalive, and listing (tool/resource/prompt definitions are not
+	 * sensitive — they're public schemas). Auth kicks in on tools/call.
 	 */
 	private const UNAUTHENTICATED_METHODS = array(
 		'initialize',
 		'notifications/initialized',
 		'initialized',
 		'ping',
+		'tools/list',
+		'resources/list',
+		'prompts/list',
 	);
 
 	private function require_auth( WP_REST_Request $request, string $method ): void {
