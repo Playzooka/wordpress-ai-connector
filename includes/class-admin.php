@@ -5,9 +5,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class WPAIC_Admin {
 	private WPAIC_Tool_Registry $registry;
+	private WPAIC_OAuth_Store $oauth_store;
 
-	public function __construct( WPAIC_Tool_Registry $registry ) {
-		$this->registry = $registry;
+	public function __construct( WPAIC_Tool_Registry $registry, WPAIC_OAuth_Store $oauth_store ) {
+		$this->registry    = $registry;
+		$this->oauth_store = $oauth_store;
 	}
 
 	public function register(): void {
@@ -38,19 +40,27 @@ class WPAIC_Admin {
 			wp_die( esc_html__( 'You do not have permission to access this page.', 'wp-ai-connector' ) );
 		}
 
-		$endpoint    = rest_url( WPAIC_REST_NAMESPACE . '/mcp' );
-		$user        = wp_get_current_user();
-		$profile_url = get_edit_user_link( $user->ID ) . '#application-passwords-section';
-		$tools       = $this->registry->list_tools();
+		$notice = $this->handle_admin_post();
+
+		$endpoint       = rest_url( WPAIC_REST_NAMESPACE . '/mcp' );
+		$user           = wp_get_current_user();
+		$profile_url    = get_edit_user_link( $user->ID ) . '#application-passwords-section';
+		$tools          = $this->registry->list_tools();
+		$authorizations = $this->oauth_store->list_authorizations();
 		?>
 		<div class="wrap wpaic-wrap">
 			<h1><?php esc_html_e( 'WordPress AI Connector', 'wp-ai-connector' ); ?></h1>
+
+			<?php if ( '' !== $notice ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php echo esc_html( $notice ); ?></p></div>
+			<?php endif; ?>
+
 			<p class="description">
 				<?php esc_html_e( 'Use the details below to connect this site to Claude, ChatGPT, or any MCP-compatible client.', 'wp-ai-connector' ); ?>
 			</p>
 
 			<h2><?php esc_html_e( 'Your MCP endpoint', 'wp-ai-connector' ); ?></h2>
-			<p><?php esc_html_e( 'Paste this URL into your AI client when adding a custom MCP connector.', 'wp-ai-connector' ); ?></p>
+			<p><?php esc_html_e( 'Paste this URL into your AI client when adding a custom MCP connector. ChatGPT and Claude will discover the OAuth flow automatically — no extra credentials to paste.', 'wp-ai-connector' ); ?></p>
 			<div class="wpaic-copy-row">
 				<input
 					type="text"
@@ -65,48 +75,85 @@ class WPAIC_Admin {
 				</button>
 			</div>
 
-			<h2><?php esc_html_e( 'Setup in 3 steps', 'wp-ai-connector' ); ?></h2>
+			<h2><?php esc_html_e( 'How to connect', 'wp-ai-connector' ); ?></h2>
+			<p><?php esc_html_e( 'This plugin supports two authentication methods. Pick the one your AI client offers:', 'wp-ai-connector' ); ?></p>
+
+			<h3><?php esc_html_e( 'OAuth (recommended — required for ChatGPT)', 'wp-ai-connector' ); ?></h3>
+			<ol class="wpaic-steps">
+				<li><?php esc_html_e( 'In your AI client, add a custom MCP connector and paste the endpoint URL above.', 'wp-ai-connector' ); ?></li>
+				<li><?php esc_html_e( 'The client will open this site in a browser. Log in if needed and click "Approve" on the consent screen.', 'wp-ai-connector' ); ?></li>
+				<li><?php esc_html_e( 'You\'re done. The connection appears under "Connected apps" below.', 'wp-ai-connector' ); ?></li>
+			</ol>
+
+			<h3><?php esc_html_e( 'Application Password (works with Claude, MCP CLIs, scripts)', 'wp-ai-connector' ); ?></h3>
 			<ol class="wpaic-steps">
 				<li>
-					<strong><?php esc_html_e( 'Create an Application Password.', 'wp-ai-connector' ); ?></strong>
 					<?php
 					printf(
 						/* translators: %s: link to the user's profile page. */
-						' ' . esc_html__( 'Go to %s, scroll to "Application Passwords", give it a name like "claude" or "chatgpt", and click Add. Copy the generated password immediately — WordPress shows it only once.', 'wp-ai-connector' ),
+						esc_html__( 'Open %s, scroll to "Application Passwords", add one named e.g. "claude", and copy the generated password (shown only once).', 'wp-ai-connector' ),
 						'<a href="' . esc_url( $profile_url ) . '">' . esc_html__( 'your profile', 'wp-ai-connector' ) . '</a>'
 					);
 					?>
 				</li>
-				<li>
-					<strong><?php esc_html_e( 'Add a custom connector in your AI client.', 'wp-ai-connector' ); ?></strong>
-					<ul>
-						<li>
-							<strong><?php esc_html_e( 'URL:', 'wp-ai-connector' ); ?></strong>
-							<code><?php echo esc_html( $endpoint ); ?></code>
-						</li>
-						<li>
-							<strong><?php esc_html_e( 'Auth:', 'wp-ai-connector' ); ?></strong>
-							<?php esc_html_e( 'HTTP Basic.', 'wp-ai-connector' ); ?>
-							<?php esc_html_e( 'Username = your WordPress username.', 'wp-ai-connector' ); ?>
-							<?php esc_html_e( 'Password = the Application Password from step 1 (with or without spaces, both work).', 'wp-ai-connector' ); ?>
-						</li>
-						<li>
-							<?php
-							printf(
-								/* translators: 1: link to Claude docs, 2: link to ChatGPT docs */
-								esc_html__( 'See client-specific instructions: %1$s · %2$s', 'wp-ai-connector' ),
-								'<a href="https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp" target="_blank" rel="noopener">Claude custom connectors</a>',
-								'<a href="https://platform.openai.com/docs/guides/developer-mode" target="_blank" rel="noopener">ChatGPT custom connectors</a>'
-							);
-							?>
-						</li>
-					</ul>
-				</li>
-				<li>
-					<strong><?php esc_html_e( 'Ask the AI to do something.', 'wp-ai-connector' ); ?></strong>
-					<?php esc_html_e( 'Try "list my latest 5 draft posts" or "create a draft post titled Hello World".', 'wp-ai-connector' ); ?>
-				</li>
+				<li><?php esc_html_e( 'In the AI client, use HTTP Basic auth: username = your WordPress username, password = the generated Application Password.', 'wp-ai-connector' ); ?></li>
 			</ol>
+
+			<p>
+				<?php
+				printf(
+					/* translators: 1: Claude docs link, 2: ChatGPT docs link */
+					esc_html__( 'Client-specific docs: %1$s · %2$s', 'wp-ai-connector' ),
+					'<a href="https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp" target="_blank" rel="noopener">Claude custom connectors</a>',
+					'<a href="https://platform.openai.com/docs/guides/developer-mode" target="_blank" rel="noopener">ChatGPT custom connectors</a>'
+				);
+				?>
+			</p>
+
+			<h2><?php esc_html_e( 'Connected apps', 'wp-ai-connector' ); ?></h2>
+			<?php if ( empty( $authorizations ) ) : ?>
+				<p class="description"><?php esc_html_e( 'No apps are connected yet. Add this site as an MCP connector in Claude or ChatGPT to authorize one.', 'wp-ai-connector' ); ?></p>
+			<?php else : ?>
+				<table class="widefat striped">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'App', 'wp-ai-connector' ); ?></th>
+							<th><?php esc_html_e( 'Authorized by', 'wp-ai-connector' ); ?></th>
+							<th><?php esc_html_e( 'Authorized', 'wp-ai-connector' ); ?></th>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody>
+					<?php foreach ( $authorizations as $auth ) :
+						$auth_user      = get_userdata( (int) $auth['user_id'] );
+						$auth_user_name = $auth_user ? $auth_user->display_name : '(deleted user)';
+						$issued_label   = $auth['issued_at']
+							? wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $auth['issued_at'] )
+							: '—';
+						?>
+						<tr>
+							<td><strong><?php echo esc_html( $auth['client_name'] ); ?></strong></td>
+							<td><?php echo esc_html( $auth_user_name ); ?></td>
+							<td><?php echo esc_html( $issued_label ); ?></td>
+							<td>
+								<form method="post" style="margin:0">
+									<input type="hidden" name="wpaic_action" value="revoke" />
+									<input type="hidden" name="client_id" value="<?php echo esc_attr( $auth['client_id'] ); ?>" />
+									<input type="hidden" name="user_id"   value="<?php echo esc_attr( (string) $auth['user_id'] ); ?>" />
+									<?php wp_nonce_field( 'wpaic_revoke_' . $auth['client_id'] . '_' . $auth['user_id'] ); ?>
+									<button type="submit" class="button button-link-delete">
+										<?php esc_html_e( 'Revoke', 'wp-ai-connector' ); ?>
+									</button>
+								</form>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+				<p class="description">
+					<?php esc_html_e( 'Revoking removes the refresh token. Any access tokens already issued expire within one hour.', 'wp-ai-connector' ); ?>
+				</p>
+			<?php endif; ?>
 
 			<h2><?php esc_html_e( 'Quick test from a terminal', 'wp-ai-connector' ); ?></h2>
 			<p><?php esc_html_e( 'Confirm the endpoint works before configuring an AI client. Replace USER and APP_PASSWORD, then run:', 'wp-ai-connector' ); ?></p>
@@ -158,7 +205,7 @@ class WPAIC_Admin {
 		<style>
 			.wpaic-wrap .wpaic-copy-row { display: flex; gap: 8px; align-items: center; max-width: 720px; }
 			.wpaic-wrap .wpaic-copy-row input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-			.wpaic-wrap .wpaic-steps > li { margin-bottom: 12px; }
+			.wpaic-wrap .wpaic-steps > li { margin-bottom: 8px; }
 			.wpaic-wrap .wpaic-pre { background: #1d2327; color: #f0f0f1; padding: 12px 16px; border-radius: 4px; overflow-x: auto; max-width: 100%; }
 			.wpaic-wrap .wpaic-pre code { background: transparent; color: inherit; font-size: 12px; line-height: 1.5; }
 		</style>
@@ -179,5 +226,33 @@ class WPAIC_Admin {
 			})();
 		</script>
 		<?php
+	}
+
+	/**
+	 * Handle revoke POSTs from the Connected apps section. Returns a notice string.
+	 */
+	private function handle_admin_post(): string {
+		if ( ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) !== 'POST' ) {
+			return '';
+		}
+		$action = sanitize_text_field( wp_unslash( $_POST['wpaic_action'] ?? '' ) );
+		if ( 'revoke' !== $action ) {
+			return '';
+		}
+		$client_id = sanitize_text_field( wp_unslash( $_POST['client_id'] ?? '' ) );
+		$user_id   = (int) ( $_POST['user_id'] ?? 0 );
+		check_admin_referer( 'wpaic_revoke_' . $client_id . '_' . $user_id );
+
+		$count = $this->oauth_store->revoke_refresh_tokens_for_user_client( $user_id, $client_id );
+		return sprintf(
+			/* translators: %d: number of revoked authorizations */
+			_n(
+				'Revoked %d authorization. Access tokens already issued will expire within one hour.',
+				'Revoked %d authorizations. Access tokens already issued will expire within one hour.',
+				$count,
+				'wp-ai-connector'
+			),
+			$count
+		);
 	}
 }

@@ -5,9 +5,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class WPAIC_MCP_Server {
 	private WPAIC_Tool_Registry $registry;
+	private WPAIC_OAuth_Server $oauth;
 
-	public function __construct( WPAIC_Tool_Registry $registry ) {
+	public function __construct( WPAIC_Tool_Registry $registry, WPAIC_OAuth_Server $oauth ) {
 		$this->registry = $registry;
+		$this->oauth    = $oauth;
 	}
 
 	public function register_routes(): void {
@@ -23,13 +25,27 @@ class WPAIC_MCP_Server {
 	}
 
 	public function check_permission( WP_REST_Request $request ) {
-		// Application Passwords populate the current user before this runs.
-		// We require an authenticated user with at least edit_posts; per-tool
-		// capabilities are checked again in dispatch_tool_call().
+		// Prefer Bearer (OAuth). If absent, fall through to whatever WordPress
+		// resolved (Application Passwords populate the current user already).
+		$bearer = $this->extract_bearer_token();
+		if ( '' !== $bearer ) {
+			$user_id = $this->oauth->resolve_bearer_token( $bearer );
+			if ( ! $user_id ) {
+				$this->send_www_authenticate( 'invalid_token' );
+				return new WP_Error(
+					'wpaic_invalid_token',
+					'Bearer token is invalid, expired, or bound to a different resource.',
+					array( 'status' => 401 )
+				);
+			}
+			wp_set_current_user( $user_id );
+		}
+
 		if ( ! is_user_logged_in() ) {
+			$this->send_www_authenticate();
 			return new WP_Error(
 				'wpaic_unauthorized',
-				'Authentication required. Use a WordPress Application Password.',
+				'Authentication required. Use an OAuth Bearer token or a WordPress Application Password.',
 				array( 'status' => 401 )
 			);
 		}
@@ -41,6 +57,30 @@ class WPAIC_MCP_Server {
 			);
 		}
 		return true;
+	}
+
+	private function extract_bearer_token(): string {
+		foreach ( array( 'HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION' ) as $key ) {
+			if ( ! empty( $_SERVER[ $key ] ) && 0 === stripos( $_SERVER[ $key ], 'bearer ' ) ) {
+				return trim( substr( (string) $_SERVER[ $key ], 7 ) );
+			}
+		}
+		if ( function_exists( 'getallheaders' ) ) {
+			foreach ( getallheaders() as $name => $value ) {
+				if ( 0 === strcasecmp( $name, 'Authorization' ) && 0 === stripos( (string) $value, 'bearer ' ) ) {
+					return trim( substr( (string) $value, 7 ) );
+				}
+			}
+		}
+		return '';
+	}
+
+	private function send_www_authenticate( string $error = '' ): void {
+		$header = $this->oauth->www_authenticate_header();
+		if ( '' !== $error ) {
+			$header .= ', error="' . $error . '"';
+		}
+		header( 'WWW-Authenticate: ' . $header );
 	}
 
 	public function handle_request( WP_REST_Request $request ) {

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       WordPress AI Connector
  * Description:       Exposes this WordPress site as an MCP server so AI clients (Claude, ChatGPT) can manage content via a remote connector.
- * Version:           0.1.1
+ * Version:           0.2.0
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Fausto Fonseca
@@ -15,13 +15,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAIC_VERSION', '0.1.1' );
+define( 'WPAIC_VERSION', '0.2.0' );
 define( 'WPAIC_PLUGIN_FILE', __FILE__ );
 define( 'WPAIC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAIC_REST_NAMESPACE', 'wp-ai-connector/v1' );
 define( 'WPAIC_MCP_PROTOCOL_VERSION', '2025-06-18' );
 
 require_once WPAIC_PLUGIN_DIR . 'includes/class-mcp-tool-registry.php';
+require_once WPAIC_PLUGIN_DIR . 'includes/oauth/class-oauth-store.php';
+require_once WPAIC_PLUGIN_DIR . 'includes/oauth/class-oauth-server.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/class-mcp-server.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/class-admin.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-posts-tool.php';
@@ -56,10 +58,29 @@ function wpaic_registry(): WPAIC_Tool_Registry {
 	return $registry;
 }
 
+function wpaic_oauth_store(): WPAIC_OAuth_Store {
+	static $store = null;
+	if ( null === $store ) {
+		$store = new WPAIC_OAuth_Store();
+	}
+	return $store;
+}
+
+function wpaic_oauth_server(): WPAIC_OAuth_Server {
+	static $server = null;
+	if ( null === $server ) {
+		$server = new WPAIC_OAuth_Server( wpaic_oauth_store() );
+	}
+	return $server;
+}
+
+// OAuth wires its own hooks (well-known + REST routes).
+wpaic_oauth_server()->register();
+
 add_action( 'rest_api_init', static function () {
-	( new WPAIC_MCP_Server( wpaic_registry() ) )->register_routes();
+	( new WPAIC_MCP_Server( wpaic_registry(), wpaic_oauth_server() ) )->register_routes();
 } );
 
 if ( is_admin() ) {
-	( new WPAIC_Admin( wpaic_registry() ) )->register();
+	( new WPAIC_Admin( wpaic_registry(), wpaic_oauth_store() ) )->register();
 }
