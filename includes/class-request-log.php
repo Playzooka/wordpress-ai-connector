@@ -54,8 +54,22 @@ class WPAIC_Request_Log {
 	/**
 	 * Allow code paths that exit() before the REST dispatch cycle finishes
 	 * (notably the 401 emitter in WPAIC_MCP_Server) to record themselves.
+	 * If the same request was already captured by rest_pre_dispatch, update
+	 * that entry's status in place rather than appending a duplicate row.
 	 */
 	public function log_manual( string $path, ?int $status, string $body = '' ): void {
+		$log = $this->all();
+		if ( ! empty( $log ) ) {
+			$last_key  = array_key_last( $log );
+			$last      = $log[ $last_key ];
+			$same_time = ( ( $last['time'] ?? 0 ) >= ( time() - 1 ) );
+			$same_path = ( ( $last['path'] ?? '' ) === substr( $path, 0, 500 ) );
+			if ( $same_time && $same_path && null === ( $last['status'] ?? null ) ) {
+				$log[ $last_key ]['status'] = $status;
+				update_option( self::OPTION, $log, false );
+				return;
+			}
+		}
 		$this->record( $path, $status, $body );
 	}
 

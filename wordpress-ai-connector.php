@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       WordPress AI Connector
  * Description:       Exposes this WordPress site as an MCP server so AI clients (Claude, ChatGPT) can manage content via a remote connector.
- * Version:           0.2.6
+ * Version:           0.2.7
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Fausto Fonseca
@@ -15,11 +15,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAIC_VERSION', '0.2.6' );
+define( 'WPAIC_VERSION', '0.2.7' );
 define( 'WPAIC_PLUGIN_FILE', __FILE__ );
 define( 'WPAIC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAIC_REST_NAMESPACE', 'wp-ai-connector/v1' );
-define( 'WPAIC_MCP_PROTOCOL_VERSION', '2025-06-18' );
+define( 'WPAIC_MCP_PROTOCOL_VERSION', '2025-11-25' );
 
 require_once WPAIC_PLUGIN_DIR . 'includes/class-mcp-tool-registry.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/class-request-log.php';
