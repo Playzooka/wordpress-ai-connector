@@ -22,9 +22,20 @@
 
 const TARGET = Deno.env.get("TARGET") ?? "https://ferramentasphda.pt";
 
+const PROXY_VERSION = "2026-05-21-3";
+
 Deno.serve(async (req: Request): Promise<Response> => {
 	const incoming = new URL(req.url);
 	const proxyOrigin = incoming.origin; // e.g. https://your-project.deno.dev
+
+	// Diagnostic endpoint to confirm which version of the proxy is deployed.
+	if (incoming.pathname === "/__proxy_health") {
+		return new Response(
+			JSON.stringify({ version: PROXY_VERSION, target: TARGET }),
+			{ status: 200, headers: { "content-type": "application/json" } }
+		);
+	}
+
 	const targetUrl = TARGET + incoming.pathname + incoming.search;
 
 	// Strip headers that aren't safe to forward verbatim. Host is rewritten
@@ -34,15 +45,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
 	forwardHeaders.delete("cf-connecting-ip");
 	forwardHeaders.delete("cf-ray");
 	forwardHeaders.delete("cf-visitor");
-
-	// Buffer the request body before forwarding. Streaming the body through
-	// Deno's fetch is flaky without `duplex: "half"`, and the body sizes we
-	// see (JSON-RPC payloads, OAuth form data) are tiny.
-	const hasBody = !["GET", "HEAD"].includes(req.method);
-	const bodyBuffer = hasBody ? await req.arrayBuffer() : undefined;
+	forwardHeaders.delete("content-length"); // recalculated by fetch
+	// Some hosts (Hostinger / WP) reject requests missing a UA.
+	if (!forwardHeaders.has("user-agent")) {
+		forwardHeaders.set("user-agent", "MCP-Proxy/" + PROXY_VERSION);
+	}
 
 	let upstream: Response;
 	try {
+		// Buffer the request body before forwarding. Streaming through Deno's
+		// fetch needs duplex: "half" and is flaky; buffering is safer for the
+		// tiny JSON-RPC payloads MCP uses.
+		const hasBody = !["GET", "HEAD"].includes(req.method);
+		const bodyBuffer = hasBody ? await req.arrayBuffer() : undefined;
+
 		upstream = await fetch(targetUrl, {
 			method: req.method,
 			headers: forwardHeaders,
@@ -51,7 +67,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
 		});
 	} catch (err) {
 		return new Response(
-			JSON.stringify({ error: "upstream_unreachable", detail: String(err) }),
+			JSON.stringify({
+				error: "upstream_unreachable",
+				detail: String(err),
+				target: targetUrl,
+				method: req.method,
+				version: PROXY_VERSION,
+			}),
 			{ status: 502, headers: { "content-type": "application/json" } }
 		);
 	}
