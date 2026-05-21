@@ -49,12 +49,14 @@ class WPAIC_Request_Log {
 
 	private function record( string $path, ?int $status ): void {
 		$entry = array(
-			'time'   => time(),
-			'method' => substr( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ), 0, 10 ),
-			'path'   => substr( $path, 0, 500 ),
-			'status' => $status,
-			'origin' => substr( (string) ( $_SERVER['HTTP_ORIGIN'] ?? '' ), 0, 200 ),
-			'ua'     => substr( (string) ( $_SERVER['HTTP_USER_AGENT'] ?? '' ), 0, 200 ),
+			'time'    => time(),
+			'method'  => substr( (string) ( $_SERVER['REQUEST_METHOD'] ?? '' ), 0, 10 ),
+			'path'    => substr( $path, 0, 500 ),
+			'status'  => $status,
+			'origin'  => substr( (string) ( $_SERVER['HTTP_ORIGIN'] ?? '' ), 0, 200 ),
+			'ua'      => substr( (string) ( $_SERVER['HTTP_USER_AGENT'] ?? '' ), 0, 200 ),
+			'headers' => $this->collect_headers(),
+			'body'    => $this->collect_body(),
 		);
 		$log = $this->all();
 		$log[] = $entry;
@@ -62,6 +64,47 @@ class WPAIC_Request_Log {
 			$log = array_slice( $log, -self::MAX_ENTRIES );
 		}
 		update_option( self::OPTION, $log, false );
+	}
+
+	/**
+	 * Pull a curated set of request headers useful for MCP debugging. We avoid
+	 * the Authorization header value so tokens aren't persisted in the log.
+	 */
+	private function collect_headers(): array {
+		$wanted = array( 'Accept', 'Content-Type', 'MCP-Protocol-Version', 'Mcp-Session-Id', 'Referer' );
+		$out    = array();
+		foreach ( $wanted as $name ) {
+			$key = 'HTTP_' . strtoupper( str_replace( '-', '_', $name ) );
+			if ( ! empty( $_SERVER[ $key ] ) ) {
+				$out[ $name ] = substr( (string) $_SERVER[ $key ], 0, 200 );
+			}
+		}
+		// Just record whether an Authorization header was present, and which scheme.
+		$auth = (string) ( $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '' );
+		if ( '' !== $auth ) {
+			$scheme           = strtok( $auth, ' ' );
+			$out['Authorization'] = $scheme . ' <redacted>';
+		}
+		return $out;
+	}
+
+	private function collect_body(): string {
+		// REST API requests have already consumed php://input, so try the
+		// most reliable sources in turn.
+		$body = '';
+		if ( ! empty( $GLOBALS['HTTP_RAW_POST_DATA'] ) ) {
+			$body = (string) $GLOBALS['HTTP_RAW_POST_DATA'];
+		}
+		if ( '' === $body ) {
+			$raw = file_get_contents( 'php://input' );
+			if ( false !== $raw ) {
+				$body = (string) $raw;
+			}
+		}
+		if ( '' === $body && ! empty( $_POST ) ) {
+			$body = (string) wp_json_encode( $_POST );
+		}
+		return substr( $body, 0, 500 );
 	}
 
 	public function all(): array {

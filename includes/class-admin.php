@@ -214,11 +214,11 @@ class WPAIC_Admin {
 				<table class="widefat striped">
 					<thead>
 						<tr>
-							<th style="width:130px"><?php esc_html_e( 'Time', 'wp-ai-connector' ); ?></th>
+							<th style="width:80px"><?php esc_html_e( 'Time', 'wp-ai-connector' ); ?></th>
 							<th style="width:60px"><?php esc_html_e( 'Method', 'wp-ai-connector' ); ?></th>
 							<th><?php esc_html_e( 'Path', 'wp-ai-connector' ); ?></th>
 							<th style="width:60px"><?php esc_html_e( 'Status', 'wp-ai-connector' ); ?></th>
-							<th style="width:200px"><?php esc_html_e( 'Origin / User-Agent', 'wp-ai-connector' ); ?></th>
+							<th><?php esc_html_e( 'Details', 'wp-ai-connector' ); ?></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -229,11 +229,24 @@ class WPAIC_Admin {
 							<td style="word-break:break-all"><code><?php echo esc_html( $entry['path'] ); ?></code></td>
 							<td><?php echo esc_html( null === $entry['status'] ? '—' : (string) $entry['status'] ); ?></td>
 							<td>
-								<?php if ( ! empty( $entry['origin'] ) ) : ?>
-									<div><?php echo esc_html( $entry['origin'] ); ?></div>
-								<?php endif; ?>
 								<?php if ( ! empty( $entry['ua'] ) ) : ?>
-									<div style="color:#646970;font-size:11px;word-break:break-all"><?php echo esc_html( $entry['ua'] ); ?></div>
+									<div style="color:#1d2327;font-size:12px"><strong>UA:</strong> <?php echo esc_html( $entry['ua'] ); ?></div>
+								<?php endif; ?>
+								<?php if ( ! empty( $entry['origin'] ) ) : ?>
+									<div style="color:#646970;font-size:11px"><strong>Origin:</strong> <?php echo esc_html( $entry['origin'] ); ?></div>
+								<?php endif; ?>
+								<?php if ( ! empty( $entry['headers'] ) && is_array( $entry['headers'] ) ) : ?>
+									<div style="color:#646970;font-size:11px;margin-top:4px">
+										<?php foreach ( $entry['headers'] as $name => $value ) : ?>
+											<div><strong><?php echo esc_html( $name ); ?>:</strong> <code><?php echo esc_html( $value ); ?></code></div>
+										<?php endforeach; ?>
+									</div>
+								<?php endif; ?>
+								<?php if ( ! empty( $entry['body'] ) ) : ?>
+									<details style="margin-top:4px">
+										<summary style="cursor:pointer;color:#2271b1;font-size:11px"><?php esc_html_e( 'Body', 'wp-ai-connector' ); ?></summary>
+										<pre style="background:#f0f0f1;padding:6px;border-radius:3px;font-size:11px;overflow-x:auto;margin:4px 0 0;white-space:pre-wrap;word-break:break-all"><?php echo esc_html( $entry['body'] ); ?></pre>
+									</details>
 								<?php endif; ?>
 							</td>
 						</tr>

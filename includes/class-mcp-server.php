@@ -31,23 +31,13 @@ class WPAIC_MCP_Server {
 		if ( '' !== $bearer ) {
 			$user_id = $this->oauth->resolve_bearer_token( $bearer );
 			if ( ! $user_id ) {
-				$this->send_www_authenticate( 'invalid_token' );
-				return new WP_Error(
-					'wpaic_invalid_token',
-					'Bearer token is invalid, expired, or bound to a different resource.',
-					array( 'status' => 401 )
-				);
+				$this->emit_unauthorized( 'invalid_token', 'Bearer token is invalid, expired, or bound to a different resource.' );
 			}
 			wp_set_current_user( $user_id );
 		}
 
 		if ( ! is_user_logged_in() ) {
-			$this->send_www_authenticate();
-			return new WP_Error(
-				'wpaic_unauthorized',
-				'Authentication required. Use an OAuth Bearer token or a WordPress Application Password.',
-				array( 'status' => 401 )
-			);
+			$this->emit_unauthorized( '', 'Authentication required. Use an OAuth Bearer token or a WordPress Application Password.' );
 		}
 		if ( ! current_user_can( 'edit_posts' ) ) {
 			return new WP_Error(
@@ -57,6 +47,35 @@ class WPAIC_MCP_Server {
 			);
 		}
 		return true;
+	}
+
+	/**
+	 * Send a 401 directly with a JSON-RPC formatted body, the WWW-Authenticate
+	 * header, and the OAuth discovery hint inside error.data.resource_metadata.
+	 * MCP clients expect JSON-RPC responses on the MCP endpoint; returning
+	 * WordPress's default WP_Error JSON shape confuses some of them and they
+	 * abort discovery instead of following WWW-Authenticate.
+	 */
+	private function emit_unauthorized( string $oauth_error, string $message ): void {
+		$this->send_www_authenticate( $oauth_error );
+		status_header( 401 );
+		header( 'Content-Type: application/json; charset=utf-8' );
+
+		$resource_metadata = home_url( WPAIC_OAuth_Server::WELL_KNOWN_PR_PATH );
+		echo wp_json_encode( array(
+			'jsonrpc' => '2.0',
+			'id'      => null,
+			'error'   => array(
+				'code'    => -32001,
+				'message' => $message,
+				'data'    => array(
+					'status'            => 401,
+					'oauth_error'       => $oauth_error,
+					'resource_metadata' => $resource_metadata,
+				),
+			),
+		) );
+		exit;
 	}
 
 	private function extract_bearer_token(): string {
