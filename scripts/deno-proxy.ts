@@ -35,12 +35,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
 	forwardHeaders.delete("cf-ray");
 	forwardHeaders.delete("cf-visitor");
 
+	// Buffer the request body before forwarding. Streaming the body through
+	// Deno's fetch is flaky without `duplex: "half"`, and the body sizes we
+	// see (JSON-RPC payloads, OAuth form data) are tiny.
+	const hasBody = !["GET", "HEAD"].includes(req.method);
+	const bodyBuffer = hasBody ? await req.arrayBuffer() : undefined;
+
 	let upstream: Response;
 	try {
 		upstream = await fetch(targetUrl, {
 			method: req.method,
 			headers: forwardHeaders,
-			body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body,
+			body: bodyBuffer,
 			redirect: "manual",
 		});
 	} catch (err) {
@@ -84,10 +90,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
 	// For OAuth metadata responses (and any other JSON whose body references
 	// the origin), rewrite the origin URL to the proxy URL so all endpoints
-	// in the published metadata are reachable via this proxy.
-	if (isJson && (isWellKnown || incoming.pathname.includes("/oauth/"))) {
+	// in the published metadata are reachable via this proxy. PHP's
+	// json_encode escapes forward slashes by default, so the body contains
+	// `https:\/\/ferramentasphda.pt` rather than the raw URL — handle both.
+	if (isJson && (isWellKnown || incoming.pathname.includes("/oauth/") || incoming.pathname.includes("/mcp"))) {
 		const text = await upstream.text();
-		const rewritten = text.replaceAll(TARGET, proxyOrigin);
+		const escapedTarget = TARGET.replace(/\//g, "\\/");
+		const escapedProxy = proxyOrigin.replace(/\//g, "\\/");
+		const rewritten = text
+			.replaceAll(escapedTarget, escapedProxy)
+			.replaceAll(TARGET, proxyOrigin);
 		responseHeaders.delete("content-length");
 		return new Response(rewritten, {
 			status: upstream.status,
