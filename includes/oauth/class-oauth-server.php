@@ -528,7 +528,11 @@ class WPAIC_OAuth_Server {
 	 * =================================================================== */
 
 	private function endpoint_url( string $name ): string {
-		return rest_url( WPAIC_REST_NAMESPACE . '/oauth/' . $name );
+		// Root-path URL. Many shared hosts block /wp-json/* from datacenter
+		// IPs, which makes remote MCP clients unable to reach the auth
+		// endpoints if they live under the REST API namespace. The
+		// WPAIC_Root_Router serves these paths directly.
+		return home_url( '/oauth/' . $name );
 	}
 
 	private function issuer(): string {
@@ -536,7 +540,9 @@ class WPAIC_OAuth_Server {
 	}
 
 	private function mcp_resource_url(): string {
-		return rest_url( WPAIC_REST_NAMESPACE . '/mcp' );
+		// See endpoint_url() — same reason for hosting at root rather than
+		// inside /wp-json/.
+		return home_url( '/mcp' );
 	}
 
 	private function current_url(): string {

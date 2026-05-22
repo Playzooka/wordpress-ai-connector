@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       WordPress AI Connector
  * Description:       Exposes this WordPress site as an MCP server so AI clients (Claude, ChatGPT) can manage content via a remote connector.
- * Version:           0.3.1
+ * Version:           0.4.0
  * Requires at least: 5.6
  * Requires PHP:      7.4
  * Author:            Fausto Fonseca
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAIC_VERSION', '0.3.1' );
+define( 'WPAIC_VERSION', '0.4.0' );
 define( 'WPAIC_PLUGIN_FILE', __FILE__ );
 define( 'WPAIC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAIC_REST_NAMESPACE', 'wp-ai-connector/v1' );
@@ -26,6 +26,7 @@ require_once WPAIC_PLUGIN_DIR . 'includes/class-request-log.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/oauth/class-oauth-store.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/oauth/class-oauth-server.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/class-mcp-server.php';
+require_once WPAIC_PLUGIN_DIR . 'includes/class-root-router.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/class-admin.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-posts-tool.php';
 require_once WPAIC_PLUGIN_DIR . 'includes/tools/class-pages-tool.php';
@@ -87,8 +88,21 @@ function wpaic_request_log(): WPAIC_Request_Log {
 wpaic_oauth_server()->register();
 wpaic_request_log()->register();
 
+function wpaic_mcp_server(): WPAIC_MCP_Server {
+	static $server = null;
+	if ( null === $server ) {
+		$server = new WPAIC_MCP_Server( wpaic_registry(), wpaic_oauth_server() );
+	}
+	return $server;
+}
+
+// Root-path router (/mcp, /oauth/*). Sidesteps hosts that block /wp-json/*
+// from datacenter IPs. The REST API routes below stay registered too as a
+// fallback for tooling that already targets the /wp-json/ URL.
+( new WPAIC_Root_Router( wpaic_mcp_server(), wpaic_oauth_server() ) )->register();
+
 add_action( 'rest_api_init', static function () {
-	( new WPAIC_MCP_Server( wpaic_registry(), wpaic_oauth_server() ) )->register_routes();
+	wpaic_mcp_server()->register_routes();
 } );
 
 if ( is_admin() ) {

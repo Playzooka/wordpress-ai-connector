@@ -44,8 +44,9 @@ class WPAIC_Admin {
 
 		$notice = $this->handle_admin_post();
 
-		$endpoint       = rest_url( WPAIC_REST_NAMESPACE . '/mcp' );
-		$user           = wp_get_current_user();
+		$endpoint          = home_url( '/mcp' );
+		$endpoint_fallback = rest_url( WPAIC_REST_NAMESPACE . '/mcp' );
+		$user              = wp_get_current_user();
 		$profile_url    = get_edit_user_link( $user->ID ) . '#application-passwords-section';
 		$tools          = $this->registry->list_tools();
 		$authorizations = $this->oauth_store->list_authorizations();
@@ -76,6 +77,10 @@ class WPAIC_Admin {
 					<?php esc_html_e( 'Copy', 'wp-ai-connector' ); ?>
 				</button>
 			</div>
+			<p class="description" style="margin-top:8px">
+				<?php esc_html_e( 'Fallback endpoint (also served, in case the host blocks root paths):', 'wp-ai-connector' ); ?>
+				<code><?php echo esc_html( $endpoint_fallback ); ?></code>
+			</p>
 
 			<h2><?php esc_html_e( 'How to connect', 'wp-ai-connector' ); ?></h2>
 			<p><?php esc_html_e( 'This plugin supports two authentication methods. Pick the one your AI client offers:', 'wp-ai-connector' ); ?></p>
@@ -248,7 +253,7 @@ class WPAIC_Admin {
 			<pre class="wpaic-pre"><code><?php
 				$curl = sprintf(
 					"curl -u 'USER:APP_PASSWORD' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' \\\n  %s",
-					$endpoint
+					$endpoint_fallback
 				);
 				echo esc_html( $curl );
 			?></code></pre>
