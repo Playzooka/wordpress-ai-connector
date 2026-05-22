@@ -112,10 +112,13 @@ class WPAIC_Root_Router {
 	}
 
 	private function emit_cors_headers(): void {
+		// CORS shape matched verbatim to a known-working MCP server's response
+		// (BeaHere). Lowercase, no DELETE, includes the headers Anthropic /
+		// Supabase MCP examples advertise.
 		header( 'Access-Control-Allow-Origin: *' );
-		header( 'Access-Control-Allow-Methods: GET, POST, OPTIONS, DELETE' );
-		header( 'Access-Control-Allow-Headers: Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version' );
-		header( 'Access-Control-Expose-Headers: WWW-Authenticate, Mcp-Session-Id' );
+		header( 'Access-Control-Allow-Methods: GET, POST, OPTIONS' );
+		header( 'Access-Control-Allow-Headers: authorization, content-type, accept, mcp-session-id, x-client-info, apikey' );
+		header( 'Access-Control-Expose-Headers: mcp-session-id, www-authenticate' );
 		header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
 		header( 'Pragma: no-cache' );
 		header( 'X-LiteSpeed-Cache-Control: no-cache' );

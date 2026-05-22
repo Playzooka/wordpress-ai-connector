@@ -108,7 +108,7 @@ class WPAIC_MCP_Server {
 			'id'      => null,
 			'error'   => array(
 				'code'    => -32000,
-				'message' => 'Invalid or missing access token',
+				'message' => 'Invalid or missing MCP access token',
 			),
 		) );
 		exit;
