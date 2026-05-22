@@ -159,15 +159,9 @@ class WPAIC_Root_Router {
 
 		$request->set_query_params( wp_unslash( $_GET ) );
 
-		// JSON body → json_params (what get_json_params() returns).
-		// Form body → body_params (what set_body_params normally has).
-		$ct = (string) $request->get_header( 'content-type' );
-		if ( false !== stripos( $ct, 'application/json' ) && '' !== (string) $raw_body ) {
-			$data = json_decode( (string) $raw_body, true );
-			if ( is_array( $data ) ) {
-				$request->set_json_params( $data );
-			}
-		}
+		// JSON params are parsed lazily by WP_REST_Request::get_json_params()
+		// from the body + content-type header, both of which we already set.
+		// Form params still need an explicit set_body_params().
 		if ( ! empty( $_POST ) ) {
 			$request->set_body_params( wp_unslash( $_POST ) );
 		}
